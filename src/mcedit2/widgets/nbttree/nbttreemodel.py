@@ -182,12 +182,16 @@ class NBTTreeList(object):
 
             return ", ".join((fmt % i.value) for i in self.tag)
 
-    def insertChildren(self, position, count, tagID):
+    def insertChildren(self, position, count, tagID=None):
         if position < 0 or position > len(self.childItems):
             return False
+        if len(self.tag):
+            tagID = self.tag.list_type
+        elif tagID is None:
+            tagID = nbt.ID_BYTE
 
         for row in range(count):
-            tag = nbt.tag_classes[self.tag.list_type or tagID]()
+            tag = nbt.tag_classes[tagID]()
             self.tag.insert(position + row, tag)
             item = NBTTreeItem(tag, self)
             self.childItems.insert(position + row, item)
@@ -408,6 +412,7 @@ class NBTTreeModel(QtCore.QAbstractItemModel):
         column = index.column()
         if column == 0:
             if item.parentItem.tag.tagID == nbt.ID_COMPOUND:
+                del item.parentItem.tag[item.tag.name]
                 item.parentItem.tag[value] = item.tag
                 item.tag.name = value
                 result = True
@@ -422,7 +427,6 @@ class NBTTreeModel(QtCore.QAbstractItemModel):
             self.dataChanged.emit(index, index)
 
         return result
-
 
 
 _NBTTagTypeSortOrder = [
@@ -464,3 +468,12 @@ class NBTFilterProxyModel(QtGui.QSortFilterProxyModel):
         if column > 1:
             return
         super(NBTFilterProxyModel, self).sort(column, order)
+
+    def getItem(self, index):
+        if index.isValid():
+            sourceIndex = self.mapToSource(index)
+            item = sourceIndex.internalPointer()
+            if item:
+                return item
+        else:
+            return None

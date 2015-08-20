@@ -50,8 +50,6 @@ class NBTEditorWidget(QtGui.QWidget):
 
         self.nbtTypesMenu.addAction(NBTIcon(7), self.tr("Byte Array"), self.addByteArray)
         self.nbtTypesMenu.addAction(NBTIcon(11), self.tr("Int Array"), self.addIntArray)
-        # self.nbtTypesMenu.addAction(NBTIcon(12), self.tr("Short Array"), self.addShortArray)
-
 
     def setRootTagRef(self, rootTagRef, keepExpanded=False):
         if rootTagRef is self.rootTagRef:
@@ -65,26 +63,27 @@ class NBTEditorWidget(QtGui.QWidget):
         self.model = NBTTreeModel(rootTagRef.rootTag)
         expanded = []
         current = None
-        if keepExpanded and self.proxyModel:
-            current = self.proxyModel.data(self.treeView.currentIndex(), NBTTreeModel.NBTPathRole)
+        if keepExpanded and self.viewModel:
+            current = self.viewModel.data(self.treeView.currentIndex(), NBTTreeModel.NBTPathRole)
             def addExpanded(parentIndex):
-                for row in range(self.proxyModel.rowCount(parentIndex)):
-                    index = self.proxyModel.index(row, 0, parentIndex)
+                for row in range(self.viewModel.rowCount(parentIndex)):
+                    index = self.viewModel.index(row, 0, parentIndex)
                     if self.treeView.isExpanded(index):
-                        expanded.append(self.proxyModel.data(index, NBTTreeModel.NBTPathRole))
+                        expanded.append(self.viewModel.data(index, NBTTreeModel.NBTPathRole))
                         addExpanded(index)
 
             addExpanded(QtCore.QModelIndex())
 
-        self.model.dataChanged.connect(self.dataDidChange)
-        self.model.rowsInserted.connect(self.rowsDidInsert)
-        self.model.rowsRemoved.connect(self.rowsDidRemove)
-
         self.proxyModel = NBTFilterProxyModel(self)
         self.proxyModel.setSourceModel(self.model)
-        # self.proxyModel.setDynamicSortFilter(True)
+        self.viewModel = self.proxyModel
+        # self.viewModel = self.model
 
-        self.treeView.setModel(self.proxyModel)
+        self.viewModel.dataChanged.connect(self.dataDidChange)
+        self.viewModel.rowsInserted.connect(self.rowsDidInsert)
+        self.viewModel.rowsRemoved.connect(self.rowsDidRemove)
+
+        self.treeView.setModel(self.viewModel)
         header = self.treeView.header()
         header.setStretchLastSection(False)
         header.setResizeMode(1, header.ResizeMode.Stretch)
@@ -93,12 +92,12 @@ class NBTEditorWidget(QtGui.QWidget):
 
         if keepExpanded:
             for path in expanded:
-                matches = self.proxyModel.match(self.proxyModel.index(0, 0, QtCore.QModelIndex()),
+                matches = self.viewModel.match(self.viewModel.index(0, 0, QtCore.QModelIndex()),
                                                 NBTTreeModel.NBTPathRole, path, flags=Qt.MatchExactly | Qt.MatchRecursive)
                 for i in matches:
                     self.treeView.setExpanded(i, True)
             if current is not None:
-                matches = self.proxyModel.match(self.proxyModel.index(0, 0, QtCore.QModelIndex()),
+                matches = self.viewModel.match(self.viewModel.index(0, 0, QtCore.QModelIndex()),
                                                 NBTTreeModel.NBTPathRole, current, flags=Qt.MatchExactly | Qt.MatchRecursive)
                 if len(matches):
                     self.treeView.setCurrentIndex(matches[0])
@@ -116,34 +115,33 @@ class NBTEditorWidget(QtGui.QWidget):
     indexAddingTo = None
 
     def itemClicked(self, index):
-        index = self.proxyModel.mapToSource(index)
-        item = self.model.getItem(index)
+        item = self.viewModel.getItem(index)
         if index.column() == 2:
             if item.isList and item.tag.list_type:
                 row = item.childCount()
-                self.model.insertRow(row, index)
-                newItemIndex = self.model.index(row, 1, index)
-                #self.treeView.setCurrentIndex(self.proxyModel.mapFromSource(newItemIndex))
-                #self.treeView.edit(self.proxyModel.mapFromSource(newItemIndex))
+                self.viewModel.insertRow(row, index)
+                # newItemIndex = self.model.index(row, 1, index)
+                # self.treeView.setCurrentIndex(newItemIndex)
+                # self.treeView.edit(newItemIndex)
 
             if item.isCompound or (item.isList and not item.tag.list_type):
                 self.indexAddingTo = index
                 self.nbtTypesMenu.move(QtGui.QCursor.pos())
                 self.nbtTypesMenu.show()
         if index.column() == 3:
-            parent = self.model.parent(index)
+            parent = self.viewModel.parent(index)
             self.doomedTagName = self.tagNameForUndo(index)
-            self.model.removeRow(index.row(), parent)
+            self.viewModel.removeRow(index.row(), parent)
 
     def addItemWithType(self, tagID):
         if not self.indexAddingTo:
             return
-        item = self.model.getItem(self.indexAddingTo)
+        item = self.viewModel.getItem(self.indexAddingTo)
         row = item.childCount()
-        self.model.insertRow(row, self.indexAddingTo, tagID)
-        newItemIndex = self.model.index(row, 0 if item.isCompound else 1, self.indexAddingTo)
-        #self.treeView.setCurrentIndex(self.proxyModel.mapFromSource(newItemIndex))
-        #self.treeView.edit(self.proxyModel.mapFromSource(newItemIndex))
+        self.viewModel.insertRow(row, self.indexAddingTo, tagID)
+        # newItemIndex = self.viewModel.index(row, 0 if item.isCompound else 1, self.indexAddingTo)
+        # self.treeView.setCurrentIndex(newItemIndex)
+        # self.treeView.edit(newItemIndex)
         self.indexAddingTo = None
 
     def addByte(self):
@@ -183,9 +181,9 @@ class NBTEditorWidget(QtGui.QWidget):
         self.addItemWithType(12)
 
     def tagNameForUndo(self, index):
-        parent = self.model.parent(index)
-        item = self.model.getItem(index)
-        parentItem = self.model.getItem(parent)
+        parent = self.viewModel.parent(index)
+        item = self.viewModel.getItem(index)
+        parentItem = self.viewModel.getItem(parent)
         if parentItem is not None and parentItem.isList:
             name = "%s #%d" % (self.tagNameForUndo(parent), parentItem.tag.index(item.tag))
         else:
@@ -207,6 +205,7 @@ class NBTEditorWidget(QtGui.QWidget):
             self.editorSession.worldEditor.syncToDisk()
         self.editorSession.pushCommand(command)
         self.tagValueChanged.emit(index.data(NBTTreeModel.NBTPathRole))
+        # self.proxyModel.sort(self.treeView)
 
     def rowsDidInsert(self, index):
         name = self.tagNameForUndo(index.parent())
